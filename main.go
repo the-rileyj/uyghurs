@@ -17,16 +17,75 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/olahol/melody.v1"
 )
 
-func validMAC(message, messageMAC, key []byte) bool {
-	mac := hmac.New(sha1.New, key)
+/*
+{
+  "ref": "refs/heads/master",
+  "repository": {
+    "name": "uyghurs",
+    "url": "https://github.com/the-rileyj/uyghurs",
+    "created_at": 1595113171,
+    "updated_at": "2020-07-19T00:15:43Z",
+    "pushed_at": 1595118640,
+    "git_url": "git://github.com/the-rileyj/uyghurs.git",
+    "ssh_url": "git@github.com:the-rileyj/uyghurs.git",
+    "default_branch": "master",
+    "master_branch": "master"
+  }
+}
+*/
 
-	mac.Write(message)
+type GithubPush struct {
+	Ref        string     `json:"ref"`
+	Repository Repository `json:"repository"`
+}
 
-	expectedMAC := mac.Sum(nil)
+type Repository struct {
+	Name          string `json:"name"`
+	URL           string `json:"url"`
+	CreatedAt     int64  `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+	PushedAt      int64  `json:"pushed_at"`
+	GitURL        string `json:"git_url"`
+	SSHURL        string `json:"ssh_url"`
+	DefaultBranch string `json:"default_branch"`
+	MasterBranch  string `json:"master_branch"`
+}
 
-	return hmac.Equal(messageMAC, expectedMAC)
+type WorkerMessage struct {
+	Type        int         `json:"type"`
+	MessageData interface{} `json:"messageData"`
+}
+
+type WorkerMessageType int
+
+const (
+	WorkRequestType WorkerMessageType = iota
+	WorkResponseType
+	PingRequestType
+	PingResponseType
+)
+
+type WorkerStateType int
+
+const (
+	Idle WorkerStateType = iota
+	Building
+)
+
+type WorkRequest struct {
+	GithubData GithubPush `json:"githubData"`
+}
+
+type WorkResponse struct {
+	Err        string
+	GithubData GithubPush `json:"githubData"`
+}
+
+type PingResponse struct {
+	State WorkerMessageType `json:"state"`
 }
 
 func main() {
@@ -63,6 +122,68 @@ func main() {
 
 		return false
 	}
+
+	workerWebsocketHandler := melody.New()
+
+	var workerConnection *melody.Session
+
+	server.GET("/worker", func(c *gin.Context) {
+		workerWebsocketHandler.HandleRequest(c.Writer, c.Request)
+	})
+
+	workerWebsocketHandler.HandleConnect(func(s *melody.Session) {
+		if workerConnection != nil {
+			// Unknown connector, ignore
+			s.Close()
+
+			return
+		}
+
+		workerConnection = s
+	})
+
+	workerWebsocketHandler.HandleDisconnect(func(s *melody.Session) {
+		workerConnection = nil
+	})
+
+	workerWebsocketHandler.HandleMessage(func(s *melody.Session, msg []byte) {
+		if s == workerConnection {
+			var workerMessage WorkerMessage
+
+			err := json.Unmarshal(msg, &workerMessage)
+
+			if err != nil {
+				fmt.Println("Error unmarshalling worker message:", err)
+
+				return
+			}
+
+			switch WorkerMessageType(workerMessage.Type) {
+			case WorkResponseType:
+				messageData, ok := workerMessage.MessageData.(WorkResponse)
+
+				if !ok {
+					fmt.Println("Error parsing worker work response:", err)
+
+					return
+				}
+
+				if messageData.Err != "" {
+					fmt.Println("Error with worker work response:", messageData.Err)
+
+					return
+				}
+
+				fmt.Println("Received WorkResponse")
+			case PingResponseType:
+				fmt.Println("Received PingResponse")
+			default:
+				fmt.Println("Unknown worker message type:", workerMessage.Type)
+
+				return
+			}
+		}
+	})
 
 	server.POST("/", func(c *gin.Context) {
 		githubRequestPayloadBytes, err := ioutil.ReadAll(c.Request.Body)
