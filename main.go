@@ -3,13 +3,18 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"hash"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -74,14 +79,43 @@ func main() {
 			return
 		}
 
-		mac := hmac.New(sha1.New, []byte(githubSecretsJSONData.Secret))
+		githubRequestPayloadSignatureParts := strings.SplitN(githubRequestPayloadHeader, "=", 2)
+
+		if len(githubRequestPayloadSignatureParts) != 2 {
+			isServerErr(c, errors.New("error parsing signature"))
+
+			return
+		}
+
+		var githubHashFunc func() hash.Hash
+
+		switch githubRequestPayloadSignatureParts[0] {
+		case "sha1":
+			githubHashFunc = sha1.New
+		case "sha256":
+			githubHashFunc = sha256.New
+		case "sha512":
+			githubHashFunc = sha512.New
+		default:
+			isServerErr(c, fmt.Errorf("unknown hash type prefix: %q", githubRequestPayloadSignatureParts[0]))
+
+			return
+		}
+
+		mac := hmac.New(githubHashFunc, []byte(githubSecretsJSONData.Secret))
 
 		mac.Write(githubRequestPayloadBytes)
 
 		expectedMAC := mac.Sum(nil)
 
-		if !hmac.Equal([]byte(githubRequestPayloadHeader), expectedMAC) {
-			isServerErr(c, fmt.Errorf("unequal hmacs %s != %s", githubRequestPayloadHeader, string(expectedMAC)))
+		signatureBytes, err := hex.DecodeString(githubRequestPayloadSignatureParts[1])
+
+		if isServerErr(c, err) {
+			return
+		}
+
+		if !hmac.Equal(signatureBytes, expectedMAC) {
+			isServerErr(c, fmt.Errorf("unequal hmacs %s != %s", string(signatureBytes), string(expectedMAC)))
 
 			return
 		}
