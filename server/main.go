@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -11,17 +12,25 @@ import (
 	"flag"
 	"fmt"
 	"hash"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 	"github.com/gin-gonic/gin"
 	"github.com/the-rileyj/uyghurs"
 	"gopkg.in/olahol/melody.v1"
 )
 
 func main() {
+	development := flag.Bool("d", false, "development flag")
+
+	flag.Parse()
+
 	githubSecretJSONFile, err := os.Open("secrets/github.json")
 
 	if err != nil {
@@ -52,11 +61,13 @@ func main() {
 		panic(err)
 	}
 
+	cli, err := client.NewEnvClient()
+
+	if err != nil {
+		panic(err)
+	}
+
 	server := gin.Default()
-
-	development := flag.Bool("d", false, "development flag")
-
-	flag.Parse()
 
 	isServerErr := func(c *gin.Context, err error) bool {
 		if err != nil {
@@ -75,11 +86,17 @@ func main() {
 	var workerConnection *melody.Session
 
 	server.GET("/worker/:uyghursSecret", func(c *gin.Context) {
-		uyghursSecretsString := c.Param("uyghursSecrets")
+		uyghursSecretsString := c.Param("uyghursSecret")
 
-		if uyghursSecretsString == uyghursSecrets.UyghursKey {
-			workerWebsocketHandler.HandleRequest(c.Writer, c.Request)
+		if uyghursSecretsString != uyghursSecrets.UyghursKey {
+			fmt.Println("bad request, aborting...")
+
+			c.AbortWithStatus(http.StatusInternalServerError)
+
+			return
 		}
+
+		workerWebsocketHandler.HandleRequest(c.Writer, c.Request)
 	})
 
 	workerWebsocketHandler.HandleConnect(func(s *melody.Session) {
@@ -89,6 +106,8 @@ func main() {
 
 			return
 		}
+
+		fmt.Println("Worker connected!")
 
 		workerConnection = s
 	})
@@ -114,7 +133,7 @@ func main() {
 				messageData, ok := workerMessage.MessageData.(uyghurs.WorkResponse)
 
 				if !ok {
-					fmt.Println("Error parsing worker work response:", err)
+					fmt.Println("Error parsing worker work response", string(msg))
 
 					return
 				}
@@ -126,6 +145,60 @@ func main() {
 				}
 
 				fmt.Println("Received WorkResponse")
+
+				timeoutContext, cancel := context.WithTimeout(context.Background(), time.Minute)
+
+				type pullResponse struct {
+					response io.ReadCloser
+					err      error
+				}
+
+				responseChan := make(chan pullResponse)
+
+				go func() {
+					response, err := cli.ImagePull(
+						timeoutContext,
+						fmt.Sprintf("therileyjohnson/%s:latest", messageData.GithubData.Repository.Name),
+						types.ImagePullOptions{
+							All: true,
+						},
+					)
+
+					responseChan <- pullResponse{response, err}
+				}()
+
+				var pushErr error
+
+				select {
+				case <-timeoutContext.Done():
+					pushErr = timeoutContext.Err()
+
+					if pushErr != nil {
+						fmt.Println("pulling image timed out")
+					}
+				case responseInfo := <-responseChan:
+					if responseInfo.err != nil {
+						pushErr = responseInfo.err
+
+						responseBytes, err := ioutil.ReadAll(responseInfo.response)
+
+						if err != nil {
+							fmt.Println("error reading image pull response:", err)
+						} else {
+							fmt.Println(string(responseBytes))
+						}
+					}
+				}
+
+				cancel()
+
+				if pushErr != nil {
+					fmt.Println("error pull image:", err)
+
+					return
+				}
+
+				fmt.Println("pulled image successfully")
 			case uyghurs.PingResponseType:
 				fmt.Println("Received PingResponse")
 			default:
@@ -192,7 +265,36 @@ func main() {
 			return
 		}
 
-		fmt.Println(string(githubRequestPayloadBytes))
+		var githubPush uyghurs.GithubPush
+
+		err = json.Unmarshal(githubRequestPayloadBytes, &githubPush)
+
+		if isServerErr(c, err) {
+			return
+		}
+
+		if workerConnection != nil {
+			workerRequest := uyghurs.WorkerMessage{
+				Type: int(uyghurs.WorkRequestType),
+				MessageData: uyghurs.WorkRequest{
+					GithubData: githubPush,
+				},
+			}
+
+			workerRequestBytes, err := json.MarshalIndent(workerRequest, "", "    ")
+
+			if isServerErr(c, err) {
+				return
+			}
+
+			err = workerConnection.Write(workerRequestBytes)
+
+			if isServerErr(c, err) {
+				return
+			}
+		} else {
+			fmt.Println("no worker available for request")
+		}
 	})
 
 	if *development {

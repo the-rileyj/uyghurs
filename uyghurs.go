@@ -49,8 +49,8 @@ type Repository struct {
 }
 
 type WorkerMessage struct {
-	Type        int         `json:"type"`
-	MessageData interface{} `json:"messageData"`
+	Type        int                    `json:"type"`
+	MessageData map[string]interface{} `json:"messageData"`
 }
 
 type WorkerMessageType int
