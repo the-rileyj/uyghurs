@@ -38,6 +38,20 @@ func main() {
 		panic(err)
 	}
 
+	uyghursSecretJSONFile, err := os.Open("secrets/uyghurs.json")
+
+	if err != nil {
+		panic(err)
+	}
+
+	var uyghursSecrets uyghurs.UyghursSecrets
+
+	err = json.NewDecoder(uyghursSecretJSONFile).Decode(&uyghursSecrets)
+
+	if err != nil {
+		panic(err)
+	}
+
 	server := gin.Default()
 
 	development := flag.Bool("d", false, "development flag")
@@ -60,8 +74,12 @@ func main() {
 
 	var workerConnection *melody.Session
 
-	server.GET("/worker", func(c *gin.Context) {
-		workerWebsocketHandler.HandleRequest(c.Writer, c.Request)
+	server.GET("/worker/:uyghursSecret", func(c *gin.Context) {
+		uyghursSecretsString := c.Param("uyghursSecrets")
+
+		if uyghursSecretsString == uyghursSecrets.UyghursKey {
+			workerWebsocketHandler.HandleRequest(c.Writer, c.Request)
+		}
 	})
 
 	workerWebsocketHandler.HandleConnect(func(s *melody.Session) {

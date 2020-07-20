@@ -17,8 +17,12 @@ package uyghurs
 }
 */
 
+type UyghursSecrets struct {
+	UyghursKey string `json:"uyghursKey"`
+}
+
 type HongKongSettings struct {
-	HongKongImageSettings hongKongImageSettings `yaml:"x-hong-kong"`
+	HongKongImageSettings HongKongImageSettings `yaml:"x-hong-kong"`
 }
 
 type HongKongImageSettings struct {
