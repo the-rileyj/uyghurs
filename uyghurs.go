@@ -19,6 +19,7 @@ package uyghurs
 
 type GithubPush struct {
 	Ref        string     `json:"ref"`
+	After      string     `json:"after"`
 	Repository Repository `json:"repository"`
 }
 
