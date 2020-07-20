@@ -17,6 +17,15 @@ package uyghurs
 }
 */
 
+type hongKongSettings struct {
+	HongKongImageSettings hongKongImageSettings `yaml:"x-hong-kong"`
+}
+
+type hongKongImageSettings struct {
+	Dockerfile string `yaml:"dockerfile"`
+	Route      string `yaml:"route"`
+}
+
 type GithubPush struct {
 	Ref        string     `json:"ref"`
 	After      string     `json:"after"`
