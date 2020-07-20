@@ -17,11 +17,11 @@ package uyghurs
 }
 */
 
-type hongKongSettings struct {
+type HongKongSettings struct {
 	HongKongImageSettings hongKongImageSettings `yaml:"x-hong-kong"`
 }
 
-type hongKongImageSettings struct {
+type HongKongImageSettings struct {
 	Dockerfile string `yaml:"dockerfile"`
 	Route      string `yaml:"route"`
 }
