@@ -24,12 +24,7 @@ type UyghursSecrets struct {
 }
 
 type HongKongSettings struct {
-	HongKongImageSettings HongKongImageSettings `yaml:"x-hong-kong"`
-}
-
-type HongKongImageSettings struct {
-	Dockerfile string `yaml:"dockerfile"`
-	Route      string `yaml:"route"`
+	HongKongImageSettings ProjectMetadata `yaml:"x-hong-kong"`
 }
 
 type GithubPush struct {
