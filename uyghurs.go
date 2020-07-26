@@ -24,7 +24,7 @@ type UyghursSecrets struct {
 }
 
 type HongKongSettings struct {
-	HongKongImageSettings ProjectMetadata `yaml:"x-hong-kong"`
+	HongKongProjectSettings ProjectMetadata `yaml:"x-hong-kong"`
 }
 
 type GithubPush struct {
