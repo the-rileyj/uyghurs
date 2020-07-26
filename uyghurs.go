@@ -1,5 +1,7 @@
 package uyghurs
 
+import "github.com/gin-gonic/gin"
+
 /*
 {
   "ref": "refs/heads/master",
@@ -74,10 +76,30 @@ type WorkRequest struct {
 }
 
 type WorkResponse struct {
-	Err        string
-	GithubData GithubPush `json:"githubData"`
+	Err             string
+	GithubData      GithubPush      `json:"githubData"`
+	ProjectMetadata ProjectMetadata `json:"projectMetaData"`
 }
 
 type PingResponse struct {
 	State WorkerMessageType `json:"state"`
+}
+
+type ProjectMetadata struct {
+	ProjectName   string       `json:"projectName"`
+	BuildsInfo    []*BuildInfo `json:"buildInfo"`
+	ProjectRoutes []*RouteInfo `json:"projectRoutes"`
+}
+
+type BuildInfo struct {
+	Context    string `json:"context"`
+	Dockerfile string `json:"dockerfile"`
+	Name       string `json:"name"`
+}
+
+type RouteInfo struct {
+	ForwardHost         string `json:"forwardHost"`
+	Route               string `json:"route"`
+	Domain              string `json:"domain"`
+	reverseProxyHandler gin.HandlerFunc
 }

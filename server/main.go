@@ -16,18 +16,25 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
+	"github.com/fatih/structs"
 	"github.com/gin-gonic/gin"
+	"github.com/mitchellh/mapstructure"
 	"github.com/the-rileyj/uyghurs"
 	"gopkg.in/olahol/melody.v1"
 )
 
 func main() {
 	development := flag.Bool("d", false, "development flag")
+
+	basePath := flag.String("b", "/", "base path of URL")
+	port := flag.Int("p", 443, "port to run on")
 
 	flag.Parse()
 
@@ -69,6 +76,8 @@ func main() {
 
 	server := gin.Default()
 
+	serverGroup := server.Group(*basePath)
+
 	isServerErr := func(c *gin.Context, err error) bool {
 		if err != nil {
 			fmt.Println("ERR:", err)
@@ -85,7 +94,7 @@ func main() {
 
 	var workerConnection *melody.Session
 
-	server.GET("/worker/:uyghursSecret", func(c *gin.Context) {
+	serverGroup.GET("/worker/:uyghursSecret", func(c *gin.Context) {
 		uyghursSecretsString := c.Param("uyghursSecret")
 
 		if uyghursSecretsString != uyghursSecrets.UyghursKey {
@@ -114,6 +123,8 @@ func main() {
 
 	workerWebsocketHandler.HandleDisconnect(func(s *melody.Session) {
 		workerConnection = nil
+
+		fmt.Println("Worker disconnected!")
 	})
 
 	workerWebsocketHandler.HandleMessage(func(s *melody.Session, msg []byte) {
@@ -130,10 +141,12 @@ func main() {
 
 			switch uyghurs.WorkerMessageType(workerMessage.Type) {
 			case uyghurs.WorkResponseType:
-				messageData, ok := workerMessage.MessageData.(uyghurs.WorkResponse)
+				var messageData uyghurs.WorkResponse
 
-				if !ok {
-					fmt.Println("Error parsing worker work response", string(msg))
+				err := mapstructure.Decode(workerMessage.MessageData, &messageData)
+
+				if err != nil {
+					fmt.Println("Error parsing worker work response:", err, string(msg))
 
 					return
 				}
@@ -149,22 +162,23 @@ func main() {
 				timeoutContext, cancel := context.WithTimeout(context.Background(), time.Minute)
 
 				type pullResponse struct {
-					response io.ReadCloser
-					err      error
+					err error
 				}
 
 				responseChan := make(chan pullResponse)
 
 				go func() {
-					response, err := cli.ImagePull(
+					imagePullResponse, err := cli.ImagePull(
 						timeoutContext,
-						fmt.Sprintf("therileyjohnson/%s:latest", messageData.GithubData.Repository.Name),
+						fmt.Sprintf("docker.io/therileyjohnson/%s:latest", messageData.GithubData.Repository.Name),
 						types.ImagePullOptions{
 							All: true,
 						},
 					)
 
-					responseChan <- pullResponse{response, err}
+					io.Copy(ioutil.Discard, imagePullResponse)
+
+					responseChan <- pullResponse{err}
 				}()
 
 				var pushErr error
@@ -177,28 +191,97 @@ func main() {
 						fmt.Println("pulling image timed out")
 					}
 				case responseInfo := <-responseChan:
-					if responseInfo.err != nil {
-						pushErr = responseInfo.err
-
-						responseBytes, err := ioutil.ReadAll(responseInfo.response)
-
-						if err != nil {
-							fmt.Println("error reading image pull response:", err)
-						} else {
-							fmt.Println(string(responseBytes))
-						}
-					}
+					pushErr = responseInfo.err
 				}
 
 				cancel()
 
 				if pushErr != nil {
-					fmt.Println("error pull image:", err)
+					fmt.Println("error pulling image:", pushErr)
 
 					return
 				}
 
 				fmt.Println("pulled image successfully")
+
+				workingDir, err := os.Getwd()
+
+				if err != nil {
+					fmt.Println("error getting current working dir:", err)
+
+					return
+				}
+
+				appWorkingDir := path.Join(workingDir, fmt.Sprintf("apps/%s", messageData.GithubData.Repository.Name))
+
+				// appRepo, err := git.PlainOpen(appWorkingDir)
+
+				// if err != nil {
+				// 	fmt.Println("error opening dir for git:", err)
+
+				// 	return
+				// }
+
+				// appRepo.Fetch(&git.FetchOptions{})
+
+				// if err != nil {
+				// 	fmt.Println("error pulling origin for app git repo:", err)
+
+				// 	return
+				// }
+
+				// appRepoHead, err := appRepo.Head()
+
+				// if err != nil {
+				// 	fmt.Println("error getting HEAD for app git repo:", err)
+
+				// 	return
+				// }
+
+				// appWorkTree, err := appRepo.Worktree()
+
+				// if err != nil {
+				// 	fmt.Println("error getting working tree for app git repo:", err)
+
+				// 	return
+				// }
+
+				// appWorkTree.Reset(&git.ResetOptions{
+				// 	Commit: appRepoHead.Hash(),
+				// 	Mode:   git.HardReset,
+				// })
+
+				// if err != nil {
+				// 	fmt.Println("error pulling origin for app git repo:", err)
+
+				// 	return
+				// }
+
+				gitPullCommand := exec.Command("git", "pull")
+
+				gitPullCommand.Dir = appWorkingDir
+
+				err = gitPullCommand.Run()
+
+				if err != nil {
+					fmt.Println("error pulling app repo:", err)
+
+					return
+				}
+
+				dockerComposeCommand := exec.Command("docker-compose", "up", "-d")
+
+				dockerComposeCommand.Dir = appWorkingDir
+
+				err = dockerComposeCommand.Run()
+
+				if err != nil {
+					fmt.Println("error running docker-compose:", err)
+
+					return
+				}
+
+				fmt.Println("brought up docker-compose for:", messageData.GithubData.Repository.Name)
 			case uyghurs.PingResponseType:
 				fmt.Println("Received PingResponse")
 			default:
@@ -209,7 +292,7 @@ func main() {
 		}
 	})
 
-	server.POST("/", func(c *gin.Context) {
+	serverGroup.POST("/", func(c *gin.Context) {
 		githubRequestPayloadBytes, err := ioutil.ReadAll(c.Request.Body)
 
 		if isServerErr(c, err) {
@@ -276,9 +359,9 @@ func main() {
 		if workerConnection != nil {
 			workerRequest := uyghurs.WorkerMessage{
 				Type: int(uyghurs.WorkRequestType),
-				MessageData: uyghurs.WorkRequest{
+				MessageData: structs.Map(uyghurs.WorkRequest{
 					GithubData: githubPush,
-				},
+				}),
 			}
 
 			workerRequestBytes, err := json.MarshalIndent(workerRequest, "", "    ")
@@ -298,8 +381,14 @@ func main() {
 	})
 
 	if *development {
-		server.Run(":9969")
+		devPort := *port
+
+		if devPort == 443 {
+			devPort = 80
+		}
+
+		server.Run(fmt.Sprintf(":%d", devPort))
 	} else {
-		server.RunTLS(":9969", "secrets/RJcert.crt", "secrets/RJsecret.key")
+		server.RunTLS(fmt.Sprintf(":%d", *port), "secrets/RJcert.crt", "secrets/RJsecret.key")
 	}
 }
