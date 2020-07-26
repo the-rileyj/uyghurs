@@ -98,8 +98,8 @@ type BuildInfo struct {
 }
 
 type RouteInfo struct {
-	ForwardHost         string `json:"forwardHost"`
-	Route               string `json:"route"`
-	Domain              string `json:"domain"`
-	reverseProxyHandler gin.HandlerFunc
+	ForwardHost         string          `json:"forwardHost"`
+	Route               string          `json:"route"`
+	Domain              string          `json:"domain"`
+	ReverseProxyHandler gin.HandlerFunc `json:"-"`
 }
