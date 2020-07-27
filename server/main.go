@@ -159,50 +159,52 @@ func main() {
 
 				fmt.Println("Received WorkResponse")
 
-				timeoutContext, cancel := context.WithTimeout(context.Background(), time.Minute)
+				for _, hongKongBuildSetting := range messageData.ProjectMetadata.BuildsInfo {
+					timeoutContext, cancel := context.WithTimeout(context.Background(), time.Minute)
 
-				type pullResponse struct {
-					err error
-				}
+					type pullResponse struct {
+						err error
+					}
 
-				responseChan := make(chan pullResponse)
+					responseChan := make(chan pullResponse)
 
-				go func() {
-					imagePullResponse, err := cli.ImagePull(
-						timeoutContext,
-						fmt.Sprintf("docker.io/therileyjohnson/%s:latest", messageData.GithubData.Repository.Name),
-						types.ImagePullOptions{
-							All: true,
-						},
-					)
+					go func() {
+						imagePullResponse, err := cli.ImagePull(
+							timeoutContext,
+							fmt.Sprintf("docker.io/therileyjohnson/%s_%s:latest", messageData.GithubData.Repository.Name, hongKongBuildSetting.Name),
+							types.ImagePullOptions{
+								All: true,
+							},
+						)
 
-					io.Copy(ioutil.Discard, imagePullResponse)
+						io.Copy(ioutil.Discard, imagePullResponse)
 
-					responseChan <- pullResponse{err}
-				}()
+						responseChan <- pullResponse{err}
+					}()
 
-				var pushErr error
+					var pushErr error
 
-				select {
-				case <-timeoutContext.Done():
-					pushErr = timeoutContext.Err()
+					select {
+					case <-timeoutContext.Done():
+						pushErr = timeoutContext.Err()
+
+						if pushErr != nil {
+							fmt.Println("pulling image timed out")
+						}
+					case responseInfo := <-responseChan:
+						pushErr = responseInfo.err
+					}
+
+					cancel()
 
 					if pushErr != nil {
-						fmt.Println("pulling image timed out")
+						fmt.Println("error pulling image:", pushErr)
+
+						return
 					}
-				case responseInfo := <-responseChan:
-					pushErr = responseInfo.err
+
+					fmt.Println("pulled image successfully")
 				}
-
-				cancel()
-
-				if pushErr != nil {
-					fmt.Println("error pulling image:", pushErr)
-
-					return
-				}
-
-				fmt.Println("pulled image successfully")
 
 				workingDir, err := os.Getwd()
 

@@ -81,20 +81,20 @@ type PingResponse struct {
 }
 
 type ProjectMetadata struct {
-	ProjectName   string       `json:"projectName"`
-	BuildsInfo    []*BuildInfo `json:"buildInfo"`
-	ProjectRoutes []*RouteInfo `json:"projectRoutes"`
+	ProjectName   string       `json:"projectName" yaml:"projectName"`
+	BuildsInfo    []*BuildInfo `json:"buildInfo" yaml:"buildInfo"`
+	ProjectRoutes []*RouteInfo `json:"projectRoutes" yaml:"projectRoutes"`
 }
 
 type BuildInfo struct {
-	Context    string `json:"context"`
-	Dockerfile string `json:"dockerfile"`
-	Name       string `json:"name"`
+	Context    string `json:"context" yaml:"context"`
+	Dockerfile string `json:"dockerfile" yaml:"dockerfile"`
+	Name       string `json:"name" yaml:"name"`
 }
 
 type RouteInfo struct {
-	ForwardHost         string          `json:"forwardHost"`
-	Route               string          `json:"route"`
-	Domain              string          `json:"domain"`
-	ReverseProxyHandler gin.HandlerFunc `json:"-"`
+	ForwardHost         string          `json:"forwardHost" yaml:"forwardHost"`
+	Route               string          `json:"route" yaml:"route"`
+	Domain              string          `json:"domain" yaml:"domain"`
+	ReverseProxyHandler gin.HandlerFunc `json:"-" yaml:"-"`
 }
