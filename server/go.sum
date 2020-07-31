@@ -90,8 +90,8 @@ github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXf
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
 github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81PSLYec5m4=
-github.com/the-rileyj/uyghurs v0.1.8 h1:jfDW7Jwd1T8BgD43Lnt4sF2wXdgk9jmSPKTeHUkJHpI=
-github.com/the-rileyj/uyghurs v0.1.8/go.mod h1:3l0IsmwLfcvq+B37jUU15BxyHo1a2Or9YyfSD3Lk7/E=
+github.com/the-rileyj/uyghurs v0.1.9 h1:EBVz+nsQsCaagq0q0mnGDs2kymiB6iN+m73Q8YY2GS0=
+github.com/the-rileyj/uyghurs v0.1.9/go.mod h1:3l0IsmwLfcvq+B37jUU15BxyHo1a2Or9YyfSD3Lk7/E=
 github.com/the-rileyj/uyghurs/server v0.0.0-20200719211838-687d957e0eb3/go.mod h1:Mzgynusu9BxEE681RYZNgrvEVzg6Nrl9eykCWluufs0=
 github.com/ugorji/go v1.1.7 h1:/68gy2h+1mWMrwZFeD1kQialdSzAb432dtpeJ42ovdo=
 github.com/ugorji/go v1.1.7/go.mod h1:kZn38zHttfInRq0xu/PH0az30d+z6vm202qpg1oXVMw=
