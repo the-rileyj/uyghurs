@@ -28,6 +28,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/fatih/structs"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/mitchellh/mapstructure"
 	"github.com/the-rileyj/uyghurs"
 	"gopkg.in/olahol/melody.v1"
@@ -40,8 +41,8 @@ type projectMetadataHandler struct {
 	routerConnection    *melody.Session
 }
 
-func newProjectMetadataHandler(baseDir string) *projectMetadataHandler {
-	projectsMetadataMap := getProjectsMetadataMap("apps/")
+func newProjectMetadataHandler(baseDir string, development bool) *projectMetadataHandler {
+	projectsMetadataMap := getProjectsMetadataMap("apps/", development)
 
 	return &projectMetadataHandler{
 		lock:                &sync.Mutex{},
@@ -85,7 +86,13 @@ func (pMH *projectMetadataHandler) updateProjectMetadata(projectMetadata *uyghur
 	}
 }
 
-func getProjectsMetadataMap(baseDir string) map[string]*uyghurs.ProjectMetadata {
+func getProjectsMetadataMap(baseDir string, development bool) map[string]*uyghurs.ProjectMetadata {
+	dockerComposeFile := "docker-compose.yml"
+
+	if development {
+		dockerComposeFile = "docker-compose.dev.yml"
+	}
+
 	projectsMetadataMap := make(map[string]*uyghurs.ProjectMetadata, 0)
 
 	err := filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
@@ -103,7 +110,7 @@ func getProjectsMetadataMap(baseDir string) map[string]*uyghurs.ProjectMetadata 
 		}
 
 		if len(projectDirSplit) == 2 && info.IsDir() {
-			dockerComposePath := filepath.Join(path, "docker-compose.yml")
+			dockerComposePath := filepath.Join(path, dockerComposeFile)
 
 			if _, fileErr := os.Stat(dockerComposePath); os.IsNotExist(fileErr) {
 				return nil
@@ -141,65 +148,40 @@ func getProjectsMetadataMap(baseDir string) map[string]*uyghurs.ProjectMetadata 
 func main() {
 	development := flag.Bool("d", false, "development flag")
 
+	envFile := flag.Bool("env", true, "use env file for config")
+
 	port := flag.Int("p", 8443, "port to run on")
 
 	flag.Parse()
 
-	///
+	if *envFile {
+		err := godotenv.Load()
 
-	githubSecretJSONFile, err := os.Open("secrets/github.json")
-
-	if err != nil {
-		panic(err)
+		if err != nil {
+			log.Fatal("Error loading .env file")
+		}
 	}
 
-	githubSecretsJSONData := struct {
-		Secret string `json:"secret"`
-	}{}
+	envVars := make(map[string]string)
 
-	err = json.NewDecoder(githubSecretJSONFile).Decode(&githubSecretsJSONData)
+	for _, envVarKey := range []string{"GITHUB_SECRET", "HONG_KONG_SECRET", "ROUTER_SECRET"} {
+		envVarValue := os.Getenv(envVarKey)
 
-	if err != nil {
-		panic(err)
+		if envVarValue == "" {
+			log.Fatalf(`environmental variable "%s" is not set`, envVarKey)
+		}
+
+		// Assure no extra whitespace characters (issue on windows with \r\n endings)
+		envVars[envVarKey] = strings.Trim(envVarValue, "\r\n")
 	}
 
-	///
-
-	uyghursSecretJSONFile, err := os.Open("secrets/uyghurs.json")
-
-	if err != nil {
-		panic(err)
-	}
-
-	var uyghursSecrets uyghurs.UyghursSecrets
-
-	err = json.NewDecoder(uyghursSecretJSONFile).Decode(&uyghursSecrets)
-
-	if err != nil {
-		panic(err)
-	}
+	githubSecret := envVars["GITHUB_SECRET"]
+	hongKongSecret := envVars["HONG_KONG_SECRET"]
+	routerSecret := envVars["ROUTER_SECRET"]
 
 	///
 
-	routerSecretJSONFile, err := os.Open("secrets/router.json")
-
-	if err != nil {
-		panic(err)
-	}
-
-	routerSecretsJSONData := struct {
-		Secret string `json:"secret"`
-	}{}
-
-	err = json.NewDecoder(routerSecretJSONFile).Decode(&routerSecretsJSONData)
-
-	if err != nil {
-		panic(err)
-	}
-
-	///
-
-	projectsMetadata := newProjectMetadataHandler("apps/")
+	projectsMetadata := newProjectMetadataHandler("apps/", *development)
 
 	cli, err := client.NewEnvClient()
 
@@ -228,10 +210,10 @@ func main() {
 
 	var workerConnection *melody.Session
 
-	server.GET("/worker/:uyghursSecret", func(c *gin.Context) {
-		uyghursSecretsString := c.Param("uyghursSecret")
+	server.GET("/worker/:hongKongSecret", func(c *gin.Context) {
+		hongKongRequestSecret := c.Param("hongKongSecret")
 
-		if uyghursSecretsString != uyghursSecrets.UyghursKey {
+		if hongKongRequestSecret != hongKongSecret {
 			fmt.Println("bad worker connection request, aborting...")
 
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -468,7 +450,7 @@ func main() {
 	server.GET("/router/:routerSecret", func(c *gin.Context) {
 		routerSecretString := c.Param("routerSecret")
 
-		if routerSecretString != routerSecretsJSONData.Secret {
+		if routerSecretString != routerSecret {
 			fmt.Println("bad router connection request, aborting...")
 
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -517,7 +499,7 @@ func main() {
 			return
 		}
 
-		mac := hmac.New(githubHashFunc, []byte(githubSecretsJSONData.Secret))
+		mac := hmac.New(githubHashFunc, []byte(githubSecret))
 
 		mac.Write(githubRequestPayloadBytes)
 
@@ -568,13 +550,7 @@ func main() {
 	})
 
 	if *development {
-		devPort := *port
-
-		if devPort == 443 {
-			devPort = 80
-		}
-
-		server.Run(fmt.Sprintf(":%d", devPort))
+		server.Run(fmt.Sprintf(":%d", *port))
 	} else {
 		server.RunTLS(fmt.Sprintf(":%d", *port), "secrets/RJcert.crt", "secrets/RJsecret.key")
 	}

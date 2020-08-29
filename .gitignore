@@ -2,3 +2,4 @@ apps/
 secrets/
 *.exe
 *.tmp
+*.env
