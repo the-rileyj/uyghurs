@@ -468,53 +468,55 @@ func main() {
 			return
 		}
 
-		githubRequestPayloadHeader := c.Request.Header.Get("X-Hub-Signature")
+		if !*development {
+			githubRequestPayloadHeader := c.Request.Header.Get("X-Hub-Signature")
 
-		if githubRequestPayloadHeader == "" {
-			isServerErr(c, errors.New("github request payload header wrong"))
+			if githubRequestPayloadHeader == "" {
+				isServerErr(c, errors.New("github request payload header wrong"))
 
-			return
-		}
+				return
+			}
 
-		githubRequestPayloadSignatureParts := strings.SplitN(githubRequestPayloadHeader, "=", 2)
+			githubRequestPayloadSignatureParts := strings.SplitN(githubRequestPayloadHeader, "=", 2)
 
-		if len(githubRequestPayloadSignatureParts) != 2 {
-			isServerErr(c, errors.New("error parsing signature"))
+			if len(githubRequestPayloadSignatureParts) != 2 {
+				isServerErr(c, errors.New("error parsing signature"))
 
-			return
-		}
+				return
+			}
 
-		var githubHashFunc func() hash.Hash
+			var githubHashFunc func() hash.Hash
 
-		switch githubRequestPayloadSignatureParts[0] {
-		case "sha1":
-			githubHashFunc = sha1.New
-		case "sha256":
-			githubHashFunc = sha256.New
-		case "sha512":
-			githubHashFunc = sha512.New
-		default:
-			isServerErr(c, fmt.Errorf("unknown hash type prefix: %q", githubRequestPayloadSignatureParts[0]))
+			switch githubRequestPayloadSignatureParts[0] {
+			case "sha1":
+				githubHashFunc = sha1.New
+			case "sha256":
+				githubHashFunc = sha256.New
+			case "sha512":
+				githubHashFunc = sha512.New
+			default:
+				isServerErr(c, fmt.Errorf("unknown hash type prefix: %q", githubRequestPayloadSignatureParts[0]))
 
-			return
-		}
+				return
+			}
 
-		mac := hmac.New(githubHashFunc, []byte(githubSecret))
+			mac := hmac.New(githubHashFunc, []byte(githubSecret))
 
-		mac.Write(githubRequestPayloadBytes)
+			mac.Write(githubRequestPayloadBytes)
 
-		expectedMAC := mac.Sum(nil)
+			expectedMAC := mac.Sum(nil)
 
-		signatureBytes, err := hex.DecodeString(githubRequestPayloadSignatureParts[1])
+			signatureBytes, err := hex.DecodeString(githubRequestPayloadSignatureParts[1])
 
-		if isServerErr(c, err) {
-			return
-		}
+			if isServerErr(c, err) {
+				return
+			}
 
-		if !hmac.Equal(signatureBytes, expectedMAC) {
-			isServerErr(c, fmt.Errorf("unequal hmacs %s != %s", string(signatureBytes), string(expectedMAC)))
+			if !hmac.Equal(signatureBytes, expectedMAC) {
+				isServerErr(c, fmt.Errorf("unequal hmacs %s != %s", string(signatureBytes), string(expectedMAC)))
 
-			return
+				return
+			}
 		}
 
 		var githubPush uyghurs.GithubPush
